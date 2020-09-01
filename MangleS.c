@@ -36,7 +36,6 @@ int SearchAndDestroy(void)
 	char lastLine[FILE_READ_BUFF];
 	char addressStr[ADDR_LEN + 1];
 	char programPath[PATH_BUFF];
-	long int addressInt;
 	BYTE *start;
 	BYTE *end;
 
@@ -62,10 +61,8 @@ int SearchAndDestroy(void)
 	addressStr[ADDR_LEN] = 0x00;
 	printf("\t[*] Start Address Str Found: 0x%s\n", addressStr);
 
-	// make hex then make pointer
-	addressInt = strtol(addressStr, NULL, 16);
-	printf("\t[*] Start Address Int Found: %lx\n", addressInt);
-	start = (BYTE *) addressInt;
+	// make pointer
+	start = (BYTE *) strtol(addressStr, NULL, 16);
 	printf("\t[*] Start Address Found: %p\n", start);
 
 	// trace through until the last line is found
@@ -77,10 +74,8 @@ int SearchAndDestroy(void)
 	addressStr[ADDR_LEN] = 0x00;
 	printf("\t[*] End Address Str Found: 0x%s\n", addressStr);
 
-	// make hex then make pointer
-	addressInt = strtol(addressStr, NULL, 16);
-	printf("\t[*] Start Address Int Found: %lx\n", addressInt);
-	end = (BYTE *) addressInt;
+	// make pointer
+	end = (BYTE *) strtol(addressStr, NULL, 16);;
 	printf("\t[*] End Address Found: %p\n", end);
 
 	// close file stream
@@ -182,7 +177,6 @@ int BlockSpook(int *devices)
 int SelfDestruct(void)
 {
 	printf("\t[X] Spook Found, Self Destructing...\n");
-	FILE *filePointer;
 	char programPath[PATH_BUFF];
 	char rmCommand[RM_LEN + PATH_BUFF] = "rm ";
 	char shredCommand[SHRED_LEN + PATH_BUFF] = "shred ";
