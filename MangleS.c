@@ -12,13 +12,15 @@
 #define RMLength 3
 #define shredLength 6
 #define LinkBuff 150
+#define BlockOutSize 200
+
 #define ELFHeaderLength 0x40
 #define ProgramHeaderLength 0x38
 #define SectionHeaderLength 0x40
 #define AddressLength 12
 #define SecondAddressOffset (AddressLength + 1)
+
 #define FileLineBuff 150
-#define HexOffset 2
 typedef int WORD;
 
 #define NoSpooks 0
@@ -32,7 +34,9 @@ int SearchAndDestroy(void)
 {
 	FILE *filePointer;
 	char line[FileLineBuff];
-	char address[AddressLength + 1];
+	char lastLine[FileLineBuff];
+	char addressStr[AddressLength + 1];
+	long int addressInt;
 	WORD *start;
 	WORD *end;
 
@@ -45,46 +49,62 @@ int SearchAndDestroy(void)
 	printf("\t[*] Opened /proc/self/maps\n");
 	
 	// read the first address from first line from /proc/self/maps into address array  
-	fgets(line, FileLineBuff, filePointer);
-	memcpy(address, line + HexOffset, AddressLength * (sizeof(char)));
-	printf("\t[*] Start Address Str Found: 0x%s\n", address);
+	fgets(line, FileLineBuff * sizeof(char), filePointer);
+	
+	memcpy(addressStr, line, AddressLength);
+	addressStr[AddressLength] = 0x00;
+	printf("\t[*] Start Address Str Found: 0x%s\n", addressStr);
 
-	// make pointer
-	start = (WORD *) address;
+	// make hex then make pointer
+	addressInt = strtol(addressStr, NULL, 16);
+	printf("\t[*] Start Address Int Found: %lx\n", addressInt);
+	start = (WORD *) addressInt;
 	printf("\t[*] Start Address Found: %p\n", start);
 
-	// trace through until the last line is found... a bit of wasted computing power to read the second address in constantly, but sue me
-	for (char lastLine[FileLineBuff]; (strstr(line, "MangleS.elf")) != NULL; fgets(line, FileLineBuff, filePointer))
+	// trace through until the last line is found
+	for (; (strstr(line, "MangleS.elf")) != NULL; fgets(line, FileLineBuff * sizeof(char), filePointer))
 	{
-		memcpy(address, lastLine + HexOffset + SecondAddressOffset, AddressLength * (sizeof(char)));
+		memcpy(lastLine, line, FileLineBuff);
 	}
-	printf("\t[*] End Address Str Found: 0x%s\n", address);
+	memcpy(addressStr, &lastLine[SecondAddressOffset], AddressLength);
+	addressStr[AddressLength] = 0x00;
+	printf("\t[*] End Address Str Found: 0x%s\n", addressStr);
 
-	// make pointer
-	end = (WORD *) address;
+	// make hex then make pointer
+	addressInt = strtol(addressStr, NULL, 16);
+	printf("\t[*] Start Address Int Found: %lx\n", addressInt);
+	end = (WORD *) addressInt;
 	printf("\t[*] End Address Found: %p\n", end);
 
 	// close file stream
 	fclose(filePointer);
 
 	// allow write to header spaces with mprotect
-	mprotect(start, (size_t) end - (size_t) start, PROT_WRITE);
+	mprotect(start, ELFHeaderLength + ProgramHeaderLength, PROT_WRITE);
+
 	// clear ELF & Program Headers
 	for (int i = 0; i < (ELFHeaderLength + ProgramHeaderLength); i++)
 	{
-		*(start + i) = 0x00;
-		printf("\t[*] Clearing start address <+%d>%p\n", i, start + i);
+		*(start + i) = 0;
+		printf("\t[*] Clearing start address <+%02x>%p\n", i, start + i);
 	}
-	mprotect(start, (size_t) ELFHeaderLength + (size_t) ProgramHeaderLength, PROT_NONE);
-	// clear Section Header
+	printf("\t[*] Done Flushing ELF and Program Headers\n");
 
+	// disallow write & allow SectionHeader write
+	mprotect(start, ELFHeaderLength + ProgramHeaderLength, PROT_READ);
+	printf("\t[*] Disabled write to ELF and Program Headers\n");
+	mprotect(end - SectionHeaderLength, SectionHeaderLength, PROT_WRITE);
+	printf("\t[*] Enabled write to Section Header\n");
+
+	// clear Section Header
 	for (int i = 0; i < SectionHeaderLength; i++)
 	{
-		*(end + i) = 0x00;
-		printf("\t[*] Clearing end address <+%d>%p\n", i, end + i);
+		*(end - SectionHeaderLength + i) = 0;
+		printf("\t[*] Clearing end address <+%02x>%p\n", i, end + i);
 	}
-	mprotect(start, (size_t) end - (size_t) start, PROT_NONE);
-
+	printf("\t[*] Done Flushing Section Headers\n");
+	mprotect(end - SectionHeaderLength, SectionHeaderLength, PROT_READ);
+	printf("\t[*] Disabled write to Section Header\n");
 	return 0;
 }
 
@@ -100,55 +120,61 @@ int VMSpook(void)
 		return VMSpookError;
 	}
 
+	printf("\t[*] Opened XDisplay\n\t\tWidth = %d\n\t\tHeight = %d\n", DisplayWidth(display, 0), DisplayHeight(display, 0));
 	// Check resolution against 1024*768; VBox default
 	if (DisplayWidth(display, 0) == 1024)
 	{
 		if (DisplayHeight(display, 0) == 768)
 		{
 			XCloseDisplay(display);
+			printf("\t[X] VM Resolution Fingerprint Found\n");
 			return 1;
 		}
 	}
+	printf("\t[*] No VM Resolution Fingerprint Found\n");
 	XCloseDisplay(display);
 	return 0;
-
 }
 
 int BlockSpook(int *devices)
 {
-	FILE *filePointer;
-	char blockOut[1000];
+	FILE *filePointer = NULL;
+	char blockOut[BlockOutSize];
 	int i = 0;
 
+	printf("\t[*] Running lsblk\n");
 	filePointer = popen("/bin/lsblk", "r");
 	if (filePointer == NULL) 
 	{
 		return BlockSpookError;
 	}
-	while (fgets(blockOut, sizeof(blockOut), filePointer) != NULL) 
+	while (fgets(blockOut, BlockOutSize * sizeof(char), filePointer) != NULL) 
 	{
 		i++;
 	}
+	printf("\t[*] lsblk returned %d line(s)", i);
 	if (*devices == 0 || *devices > i)
 	{
-		fclose(filePointer);
+		pclose(filePointer);
 		*devices = i;
 		return 0;
 	}
 	else if (*devices < i)
 	{
-		fclose(filePointer);
+		printf("\t[X] Block Device Inserted, Terminating\n");
+		pclose(filePointer);
 		return 1;
 	}
 	else
 	{
-		fclose(filePointer);
+		pclose(filePointer);
 		return 0;
 	}
 }
 
 int SelfDestruct(void)
 {
+	printf("\t[X] Spook Found, Self Destructing...\n");
 	FILE *filePointer;
 	char linkDir[LinkBuff];
 	char *linkName = "/proc/self/exe";
@@ -156,7 +182,7 @@ int SelfDestruct(void)
 	char shredCommand[shredLength + LinkBuff] = "shred ";
 
 	// open /proc/self/exe 
-	filePointer = popen(linkName, "r");
+	filePointer = fopen(linkName, "r");
 	if (filePointer == NULL)
 	{
 		fclose(filePointer);
@@ -167,12 +193,15 @@ int SelfDestruct(void)
 	realpath(linkName, linkDir);
 	fclose(filePointer);
 
+
+	printf("\t[*] Found Exe Location %s", linkDir);
 	// execute shred command
-	strcat(rmCommand, linkName);
-	strcat(shredCommand, linkName);
-	system(rmCommand);
+	strcat(rmCommand, linkDir);
+	strcat(shredCommand, linkDir);
 	system(shredCommand);
-	
+	system(rmCommand);
+	printf("\t[*] Successfully Shredded and Rm'd File\n");
+
 	exit(0); 
 }
 
@@ -191,42 +220,43 @@ int SpookHandle(int spookError)
 	sw: switch(spookError)
 	{
 		case NoSpooks:
-			return 0;			
+			break;		
 		case SpookAssert:
-			printf("\t[X] Spook Found, Abourting\n");
+			printf("\t[X] Spook Found, Exiting\n");
 			spookError = SelfDestruct();
 			goto sw;
 		case SearchAndDestroyError:
-			printf("\t[X] SearchAndDestroyError, Aborting\n");
+			printf("\t[X] SearchAndDestroyError, Exiting\n");
 			spookError = SelfDestruct();
 			goto sw;
 		case VMSpookError:
-			printf("\t[X] VMSpookError, Aborting\n");
+			printf("\t[X] VMSpookError, Exiting\n");
 			spookError = SelfDestruct();
 			goto sw;
 		case BlockSpookError:
-			printf("\t[X] BlockSpookError, Aborting\n");
+			printf("\t[X] BlockSpookError, Exiting\n");
+			spookError = SelfDestruct();
 			goto sw;
 		case SelfDestructError:
 			printf("\t[X] SelfDestructError, Exiting\n");
 			exit(1);
 	}
+	return 0;
 }
 
 int main(void)
 {	
-	int *devices;
+	int *devices = 0;
 
-	SpookHandle(VMSpook());
 	SpookHandle(SearchAndDestroy());
-
+	SpookHandle(VMSpook());
+	
 	// do evil
 	while (1)
 	{
 		SpookHandle(BlockSpook(devices));
-
 		printf("\t[*] Doing Evil\n");
-		sleep(1);		
+		sleep(1);
 	}	
-
+	return 0;
 }
