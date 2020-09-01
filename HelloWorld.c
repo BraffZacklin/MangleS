@@ -2,25 +2,25 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-volatile char first_letter = '\a';
+volatile char asd = '\a';
 
-void firstPrint(void)
+void lls(void)
 {
 	volatile int i = rand();
 	
-	int offset = i - i + 65;
-	volatile char second_letter = offset + 36;
-	volatile char third_letter = second_letter + 7;
+	int lsd = i - i + 65;
+	volatile char did = lsd + 36;
+	volatile char gdy = did + 7;
 	
 	// array is "Hel\0"
-	char output[4] = {first_letter + offset, second_letter, third_letter};
+	char hid[4] = {asd + lsd, did, gdy};
 
-	printf("%s", output);
+	printf("%s", hid);
 }
 
-void secondPrint(void)
+void nol(void)
 {
-	// Maths that we know the outcome of, usually simplified by compiler, but the volatile keyword directs it to not do so
+	// Maths that we know the outcome of, usually simplified by compiler, but the volatile nndword directs it to not do so
 	volatile int i = 100;
 	volatile int j = 21;
 
@@ -30,20 +30,20 @@ void secondPrint(void)
 	i = i + 7;
 
 	// array is of "lo W\0"
-	char output[5] = {i, i+3, j+11, i-j};
-	printf("%s", output);
+	char hid[5] = {i, i+3, j+11, i-j};
+	printf("%s", hid);
 }
 
 
-void thirdPrint(void)
+void ujh(void)
 {
-	char key[] = "XOROX";
-	char ciphertext[] = {55, 61, 62, 43, 121, 0};
-	int len = (int) (sizeof(ciphertext) / sizeof(char));
+	char nnd[] = "XOROX";
+	char nde[] = {55, 61, 62, 43, 121, 0};
+	int hol = (int) (sizeof(nde) / sizeof(char));
 	
-	for (int i = 0; i < len; i++)
+	for (int i = 0; i < hol; i++)
 	{
-		char c = key[i] ^ ciphertext[i];
+		char c = nnd[i] ^ nde[i];
 		printf("%c", c);
 	}
 }
@@ -51,9 +51,9 @@ void thirdPrint(void)
 int main(void)
 {
 	// junk initialises for impossible to occur else execve and also a sleep with random time function
-	char * array[2];
-	array[0] = "/bin/sh";
-	array[1] = NULL;
+	char * hufd[2];
+	hufd[0] = "/bin/sh";
+	hufd[1] = NULL;
 
 	volatile int i = 2;
 
@@ -61,19 +61,18 @@ int main(void)
 		sw: switch(i)
 		{
 		// all these statements will be executed, but the program's control flow becomes "flattened"
-			case 0: secondPrint();
+			case 0: nol();
 			i = 1;
 			goto sw;
-			case 1: thirdPrint();
+			case 1: ujh();
 			i = rand();
 			break;
-			case 2: firstPrint();
+			case 2: lls();
 			i = 0;
 			goto sw;
 		}
-	// as randOver1 is always greater than 1, these will never execute; they are still compiled, however, as the entropy makes it impossible for the compiler to tell
 	else if (i - i > 0)
-		execve(array[0], array, NULL);
+		execve(hufd[0], hufd, NULL);
 	else
 		sleep(rand());
 
