@@ -1,57 +1,37 @@
 #include <stdio.h> 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
-<<<<<<< HEAD
-=======
 #include <stdlib.h>
 #include <ctype.h>
->>>>>>> f252570... Added HelloWorld.c
+#include <X11/Xlib.h>
 
+#define RMLength 3
+#define shredLength 6
+#define LinkBuff 150
 #define ELFHeaderLength 0x40
 #define ProgramHeaderLength 0x38
-#define SectionheaderLength 0x40
-<<<<<<< HEAD
-#define Offset 56
-// above is the length of string "address           perms offset  dev   inode   pathname\n"
-// It's at the top of /proc/self/maps
-=======
+#define SectionHeaderLength 0x40
 #define AddressLength 12
-#define fileLineSize 100
->>>>>>> f252570... Added HelloWorld.c
+#define SecondAddressOffset (AddressLength + 1)
+#define FileLineBuff 150
+#define HexOffset 2
 typedef int WORD;
 
-void searchAndDestroy(void)
+#define NoSpooks 0
+#define SpookAssert 1
+#define SearchAndDestroyError 2
+#define VMSpookError 3
+#define BlockSpookError 4
+#define SelfDestructError 5
+
+int SearchAndDestroy(void)
 {
-<<<<<<< HEAD
-	// Get address space
-	int fileDescriptor;
-	char* map[2];
-	WORD *start;
-	WORD *end;
-
-	// open /proc/self/map to read address space
-	fileDescriptor = open("/proc/self/maps", O_RDONLY);
-	// set offset to 57 and read next bytes into char pointer at map[0], skip the dash, and read next into char pointer at map[1]
-	lseek(fileDescriptor, Offset, SEEK_CUR);
-	read(fileDescriptor, map[0], 8);
-	lseek(fileDescriptor, 1, SEEK_CUR);
-	read(fileDescriptor, map[1], 8);
-	// map now contains two char pointers; one to the start address, one to the end address
-
-	// sscanf the char in map[0] to hexadecimal values to be pointers start and end
-	sscanf(map[0], "%x", start);
-	sscanf(map[1], "%x", end);
-
-	// clear ELF & Program Headers
-	for (int i = 0; i <= ELFHeaderLength + ProgramHeaderLength; i++)
-	{
-		*(start + i) = 0x00;
-=======
 	FILE *filePointer;
-	char *line;
+	char line[FileLineBuff];
 	char address[AddressLength + 1];
 	WORD *start;
 	WORD *end;
@@ -60,50 +40,193 @@ void searchAndDestroy(void)
 	filePointer = fopen("/proc/self/maps", "r");
 	if (filePointer == NULL)
 	{
-		fprintf(stderr, "\t[X] Failed to open /proc/self/maps, exiting now...\n");
-		exit(1);
+		return SearchAndDestroyError;
 	}
 	printf("\t[*] Opened /proc/self/maps\n");
-	// start should store the characters from the first line that reads MangleS.elf through to the "-"
-	// if strstr(line, "MangleS.elf") != NULL, 
+	
+	// read the first address from first line from /proc/self/maps into address array  
+	fgets(line, FileLineBuff, filePointer);
+	memcpy(address, line + HexOffset, AddressLength * (sizeof(char)));
+	printf("\t[*] Start Address Str Found: 0x%s\n", address);
 
+	// make pointer
+	start = (WORD *) address;
+	printf("\t[*] Start Address Found: %p\n", start);
 
+	// trace through until the last line is found... a bit of wasted computing power to read the second address in constantly, but sue me
+	for (char lastLine[FileLineBuff]; (strstr(line, "MangleS.elf")) != NULL; fgets(line, FileLineBuff, filePointer))
+	{
+		memcpy(address, lastLine + HexOffset + SecondAddressOffset, AddressLength * (sizeof(char)));
+	}
+	printf("\t[*] End Address Str Found: 0x%s\n", address);
+
+	// make pointer
+	end = (WORD *) address;
+	printf("\t[*] End Address Found: %p\n", end);
+
+	// close file stream
+	fclose(filePointer);
+
+	// allow write to header spaces with mprotect
+	mprotect(start, (size_t) end - (size_t) start, PROT_WRITE);
 	// clear ELF & Program Headers
-	/*
-	for (int i = 0; i <= ELFHeaderLength + ProgramHeaderLength; i++)
+	for (int i = 0; i < (ELFHeaderLength + ProgramHeaderLength); i++)
 	{
 		*(start + i) = 0x00;
-		printf("\t[*] Clearing address %p\n", start + i);
->>>>>>> f252570... Added HelloWorld.c
+		printf("\t[*] Clearing start address <+%d>%p\n", i, start + i);
 	}
+	mprotect(start, (size_t) ELFHeaderLength + (size_t) ProgramHeaderLength, PROT_NONE);
 	// clear Section Header
-	for (int i = SectionheaderLength; i >= 0; i--)
-	{
-<<<<<<< HEAD
-		*(end + i) = 0x00;
-	}
-=======
-		printf("\t[*] Clearing address %p\n", end + i);
-		*(end + i) = 0x00;
-	}
-	*/
->>>>>>> f252570... Added HelloWorld.c
 
+	for (int i = 0; i < SectionHeaderLength; i++)
+	{
+		*(end + i) = 0x00;
+		printf("\t[*] Clearing end address <+%d>%p\n", i, end + i);
+	}
+	mprotect(start, (size_t) end - (size_t) start, PROT_NONE);
+
+	return 0;
+}
+
+int VMSpook(void)
+{
+	Display *display;
+	char *displayName = NULL;
+
+	// get display connection
+	display = XOpenDisplay(displayName);
+	if (!display)
+	{
+		return VMSpookError;
+	}
+
+	// Check resolution against 1024*768; VBox default
+	if (DisplayWidth(display, 0) == 1024)
+	{
+		if (DisplayHeight(display, 0) == 768)
+		{
+			XCloseDisplay(display);
+			return 1;
+		}
+	}
+	XCloseDisplay(display);
+	return 0;
+
+}
+
+int BlockSpook(int *devices)
+{
+	FILE *filePointer;
+	char blockOut[1000];
+	int i = 0;
+
+	filePointer = popen("/bin/lsblk", "r");
+	if (filePointer == NULL) 
+	{
+		return BlockSpookError;
+	}
+	while (fgets(blockOut, sizeof(blockOut), filePointer) != NULL) 
+	{
+		i++;
+	}
+	if (*devices == 0 || *devices > i)
+	{
+		fclose(filePointer);
+		*devices = i;
+		return 0;
+	}
+	else if (*devices < i)
+	{
+		fclose(filePointer);
+		return 1;
+	}
+	else
+	{
+		fclose(filePointer);
+		return 0;
+	}
+}
+
+int SelfDestruct(void)
+{
+	FILE *filePointer;
+	char linkDir[LinkBuff];
+	char *linkName = "/proc/self/exe";
+	char rmCommand[RMLength + LinkBuff] = "rm ";
+	char shredCommand[shredLength + LinkBuff] = "shred ";
+
+	// open /proc/self/exe 
+	filePointer = popen(linkName, "r");
+	if (filePointer == NULL)
+	{
+		fclose(filePointer);
+		return SelfDestructError;
+	}
+
+	// read the symlink and close file
+	realpath(linkName, linkDir);
+	fclose(filePointer);
+
+	// execute shred command
+	strcat(rmCommand, linkName);
+	strcat(shredCommand, linkName);
+	system(rmCommand);
+	system(shredCommand);
+	
+	exit(0); 
+}
+
+int SpookHandle(int spookError)
+{
+	/* 
+	Return Codes:
+		0 == NoSpooks
+		1 == SpookAssert
+		2 == SearchAndDestroyError
+		3 == VMSpookError
+		4 == BlockSpookError
+		5 == SelfDestructError
+	2-6 will cause exit(0) still
+	*/
+	sw: switch(spookError)
+	{
+		case NoSpooks:
+			return 0;			
+		case SpookAssert:
+			printf("\t[X] Spook Found, Abourting\n");
+			spookError = SelfDestruct();
+			goto sw;
+		case SearchAndDestroyError:
+			printf("\t[X] SearchAndDestroyError, Aborting\n");
+			spookError = SelfDestruct();
+			goto sw;
+		case VMSpookError:
+			printf("\t[X] VMSpookError, Aborting\n");
+			spookError = SelfDestruct();
+			goto sw;
+		case BlockSpookError:
+			printf("\t[X] BlockSpookError, Aborting\n");
+			goto sw;
+		case SelfDestructError:
+			printf("\t[X] SelfDestructError, Exiting\n");
+			exit(1);
+	}
 }
 
 int main(void)
-{
-	searchAndDestroy();
+{	
+	int *devices;
+
+	SpookHandle(VMSpook());
+	SpookHandle(SearchAndDestroy());
 
 	// do evil
-<<<<<<< HEAD
-	while (TRUE)
-=======
 	while (1)
->>>>>>> f252570... Added HelloWorld.c
 	{
-		printf("\t[*] Doing Evil");
-		sleep(3);
-	}	
-}
+		SpookHandle(BlockSpook(devices));
 
+		printf("\t[*] Doing Evil\n");
+		sleep(1);		
+	}	
+
+}
